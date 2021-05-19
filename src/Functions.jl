@@ -14,14 +14,13 @@ model_jac(model,vars)
 This function takes as input a JuMP model and a set of associated variables and returns the Jacobian matrix of the model constraints 
 w.r.t. to the passed variables. 
 """
-
 function model_jac(model::Model, vars::Array{JuMP.VariableRef})
     #Access all constraints and variables  
     ctypes, cfuncs, crhs, ncto,nct = get_constraint_functions(model)
     allvars = all_variables(model)
     #Pre-allocate output array
     nv = length(vars);          #Number of variables
-    pdv = Array{Any}(undef,(ncto,nv))
+    jac = Array{Any}(undef,(ncto,nv))
     #Load partial derivatives
     local ncto;  
     ncto = 0;
@@ -32,26 +31,38 @@ function model_jac(model::Model, vars::Array{JuMP.VariableRef})
           for j in 1:nc #Loop over different constraints, per type
             ncto += 1;  #Counter for total number of constraints, independant of type
                for i in 1:nv #Loop of variables, per constraints, per type
-                pdv[ncto,i] = differentiate_function_new(cfuncs[k][j], vars[i],allvars)   
+                jac[ncto,i] = differentiate_function_new(cfuncs[k][j], vars[i],allvars)   
                end 
            end
    end
 
-    return pdv
+    return jac
 end 
 
+""" 
+model_jac!(model)
+
+This function takes as input a JuMP model and computes its Jacobian. The Jaocbian is registered as expression within the model with the default name 
+"Jacobian".
+"""
 function model_jac!(model::Model)
 vars = all_variables(model)
 model_jac!(model,vars)
 end 
 
+"""
+model_jac!(model,vars)
+
+This function takes as input a JuMP model and an array of associated variables and computes the Jacobian w.r.t. the specified variables. The Jacobian
+is registered as expression within the model with the default name "Jacobian". 
+"""
 function model_jac!(model::Model, vars::Array{JuMP.VariableRef})
     #Access all constraints and variables  
     ctypes, cfuncs, crhs, ncto,nct = get_constraint_functions(model)
     allvars = all_variables(model)
     #Pre-allocate output array
     nv = length(vars);          #Number of variables
-    pdv = Array{Any}(undef,(ncto,nv))
+    jac = Array{Any}(undef,(ncto,nv))
     #Load partial derivatives
     local ncto;  
     ncto = 0;
@@ -62,13 +73,13 @@ function model_jac!(model::Model, vars::Array{JuMP.VariableRef})
           for j in 1:nc #Loop over different constraints, per type
             ncto += 1;  #Counter for total number of constraints, independant of type
                for i in 1:nv #Loop of variables, per constraints, per type
-                pdv[ncto,i] = differentiate_function_new(cfuncs[k][j], vars[i],allvars)   
+                jac[ncto,i] = differentiate_function_new(cfuncs[k][j], vars[i],allvars)   
                end 
            end
    end
-@expression(model,Jacobian,pdv)
-return Jacobian = @expression(model, pdv)
+@expression(model,Jacobian,jac)
 end 
+
 
 """
 model_jac(model,vals)
@@ -76,7 +87,6 @@ model_jac(model,vals)
 This function takes as input a JuMP model and an array of associated values and returns the Jacobian of the model, evaluated at the specified point.
 The number of specified values must match exactly the number of variables within the model. 
 """
-
 function model_jac(model::Model, vals::Array{<:Number})
 #Check inputs
 vars = all_variables(model)
@@ -93,7 +103,6 @@ model_jac(model,vars,vals)
 This function takes as input a JuMP model and a set of associated variables and returns the Jacobian matrix of the model constraints 
 w.r.t. to the passed variables, evaluated at the point specified by vals. 
 """
-
 function model_jac(model::Model, vars::Array{JuMP.VariableRef}, vals::Array{<:Number})
     #Check inputs 
     if length(vars) != length(vals)
@@ -104,7 +113,7 @@ function model_jac(model::Model, vars::Array{JuMP.VariableRef}, vals::Array{<:Nu
     allvars = all_variables(model)
     #Pre-allocate arrays
     nv = length(vars);          #Number of variables
-    pdv  = Array{Any}(undef,(ncto,nv))
+    jac  = Array{Any}(undef,(ncto,nv))
     vals = convert(Array{Float64},vals)
     #Load partial derivatives
     local ncto;  
@@ -116,11 +125,21 @@ function model_jac(model::Model, vars::Array{JuMP.VariableRef}, vals::Array{<:Nu
           for j in 1:nc #Loop over different constraints, per type
             ncto += 1;  #Counter for total number of constraints, independant of type
                for i in 1:nv #Loop of variables, per constraints, per type
-                pdv[ncto,i] = differentiate_function_new(cfuncs[k][j],vars[i],vars,vals[i],vals)   
+                jac[ncto,i] = differentiate_function_new(cfuncs[k][j],vars[i],vars,vals[i],vals)   
                end 
            end
    end
- return pdv
+ return jac
+end 
+
+"""
+model_hess(model)
+
+This function returns the Hessian matrix of the objective function specified in model w.r.t to all variables registered in that model. 
+"""
+function model_hess(model::Model)
+vars = all_variables(model)  
+model_hess(model::Model,vars::Array{JuMP.VariableRef})
 end 
 
 """
@@ -129,13 +148,6 @@ model_hess(model, vars)
 This function returns the Hessian matrix of the objective function specified in model w.r.t to the variables specified by vars. 
 
 """
-
-function model_hess(model::Model)
-vars = all_variables(model)  
-model_hess(model::Model,vars::Array{JuMP.VariableRef})
-end 
-
-
 function model_hess(model::Model,vars::Array{JuMP.VariableRef})
 #Load/pre-allocate 
 obj  = get_objective_function(model); #Note:Currently converts VariableRef objective to scalar affine
@@ -162,13 +174,7 @@ end
 return hess
 end 
 
-
-
-
-
-
-
-
+### - Getting constraints from model
 function get_constraint_functions(model::Model)
     local ncto
     bkend = backend(model);
@@ -193,34 +199,13 @@ end
 
 
 ### - Differentiating single terms
-# returns the derivative of an affine term
 function differentiate_term(term::MOI.ScalarAffineTerm{Float64}, var_id::MOI.VariableIndex)
     return term.variable_index == var_id ? term.coefficient : 0.;
 end
 
-# returns the derivative of a quadratic term
-function differentiate_term(term::MOI.ScalarQuadraticTerm{Float64}, var_id::MOI.VariableIndex)
-    if term.variable_index_1 == var_id
-        return MOI.ScalarAffineTerm(term.variable_index_2 == 
-                var_id ? 2.0*term.coefficient : term.coefficient, term.variable_index_2);
-    elseif term.variable_index_2 == var_id
-        return MOI.ScalarAffineTerm(term.coefficient, term.variable_index_1);
-    else
-        return 0;
-    end
-end
-###
-
-
-
-
-
-
-
-
 ### Differentiating functions
 
-##New idea
+##New function for quadratic terms
 function differentiate_function_new(func::MOI.ScalarQuadraticFunction{Float64}, var::VariableRef,vars::Array{JuMP.VariableRef})
     local coeff #Bind coeff outisde of loop
     constant = 0.;
@@ -290,7 +275,7 @@ return coeff*val + constant
 end 
 
 
-# takes a linear function and a model variable and returns the derivative w.r.t. the 
+# Takes a linear function and a model variable and returns the derivative w.r.t. the 
 # given variable
 function differentiate_function_new(func::MOI.ScalarAffineFunction{Float64}, var::VariableRef,vars::Array{JuMP.VariableRef},val=0.0, vals=[0.0])
     constant = 0.;
@@ -306,47 +291,6 @@ function differentiate_function_new(func::MOI.SingleVariable, var::VariableRef,v
     return func.variable == index(var) ? 1. : 0.;
 end
 
-
-
-
-
-# takes a quadratic function and a model variable and returns the derivative w.r.t. the 
-# given variable
-function differentiate_function(func::MOI.ScalarQuadraticFunction{Float64}, var::VariableRef)
-    constant = 0.;
-    for term in func.affine_terms 
-        constant += differentiate_term(term, index(var));
-    end
-    terms = Array{MOI.ScalarAffineTerm{Float64},1}();
-    for term in func.quadratic_terms
-        t = differentiate_term(term, index(var))
-        if t != 0
-            append!(terms, [t]);
-        end
-    end
-    if !isempty(terms)
-        return MOI.ScalarAffineFunction(terms, constant);
-    else
-        return constant; 
-    end
-
-end
-
-# takes a linear function and a model variable and returns the derivative w.r.t. the 
-# given variable
-function differentiate_function(func::MOI.ScalarAffineFunction{Float64}, var::VariableRef)
-    constant = 0.;
-    for term in func.terms
-        constant += differentiate_term(term, index(var));
-    end
-    return constant;
-end
-
-# takes a function composed of a single variable and a model variable and returns 
-# the derivative w.r.t. the given variable
-function differentiate_function(func::MOI.SingleVariable, var::VariableRef)
-    return func.variable == index(var) ? 1. : 0.;
-end
 
 #Returns the objective function of the given model as a MathOptInterface object 
 function get_objective_function(model::Model)
