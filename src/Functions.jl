@@ -162,9 +162,9 @@ end
 #Compute the gradient vector
 for i in 1:nv
 grad[i] =  differentiate_function_new(obj,vars[i],vars);
-#Assemble 
+#Assemble Hessian
 for j in 1:nv 
-    if grad[i].terms.keys == VariableRef[vars[j]]
+    if typeof(grad[i]) != Float64 && grad[i].terms.keys == VariableRef[vars[j]]
        hess[i,j] = grad[i].terms.vals[1,1];
     else 
        hess[i,j] = 0;
